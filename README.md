@@ -52,6 +52,41 @@ flowchart LR
 
 本番構成では、フロントエンドを S3 / CloudFront、バックエンドを EC2 上のDocker、データベースを RDS PostgreSQL に配置する想定です。Terraformの詳細は [`terraform/`](terraform/) を参照してください。
 
+### クラウド構成（AWS）
+
+```mermaid
+flowchart TB
+    User[利用者] --> CF[CloudFront]
+    CF -->|静的ファイル| S3[S3 非公開バケット]
+    CF -->|認証とAPIリクエスト| EC2
+
+    subgraph AWS[AWS]
+        subgraph VPC[VPC]
+            subgraph Public[パブリックサブネット]
+                EC2[EC2 Docker]
+                EIP[Elastic IP]
+                EIP --- EC2
+            end
+            subgraph Private[プライベートサブネット]
+                RDS[(RDS PostgreSQL)]
+            end
+            EC2 -->|DB接続| RDS
+        end
+        S3
+        CF
+        Scheduler[EventBridge Scheduler] --> Lambda[Lambda start and stop]
+        Lambda --> EC2
+        Lambda --> RDS
+    end
+
+    GitHub[GitHub Actions] -->|静的サイトを配布| S3
+    GitHub -->|アプリをデプロイ| EC2
+    EC2 -.-> Gemini[Google Gemini API]
+    EC2 -.-> OpenAI[OpenAI API]
+```
+
+CloudFrontは静的ファイルをS3から、認証・タスク・AI関連のリクエストをEC2のAPIへ振り分けます。RDSはプライベートサブネットに置き、アプリケーションサーバーからのみ接続します。
+
 ### 利用フロー
 
 ```mermaid
