@@ -1,4 +1,5 @@
 resource "aws_db_subnet_group" "main" {
+  # RDS を複数のプライベートサブネットに配置し、AZ 障害に備えます。
   name       = "${var.project_name}-db-subnet-group"
   subnet_ids = var.private_subnet_ids
 
@@ -8,6 +9,7 @@ resource "aws_db_subnet_group" "main" {
 }
 
 resource "aws_db_instance" "main" {
+  # アプリケーションのデータを保存する PostgreSQL。外部公開せず EC2 からのみ接続させます。
   identifier        = "${var.project_name}-db"
   allocated_storage = 20
   storage_type      = "gp3"

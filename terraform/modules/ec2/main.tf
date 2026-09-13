@@ -1,4 +1,5 @@
 data "aws_ami" "amazon_linux_2023" {
+  # Amazon Linux 2023 の最新 AMI を自動取得します。
   most_recent = true
   owners      = ["amazon"]
 
@@ -9,6 +10,7 @@ data "aws_ami" "amazon_linux_2023" {
 }
 
 resource "aws_instance" "app" {
+  # アプリケーションを実行する EC2 インスタンスです。
   ami           = data.aws_ami.amazon_linux_2023.id
   instance_type = var.instance_type
   key_name      = var.key_name
@@ -29,14 +31,14 @@ resource "aws_instance" "app" {
 
   user_data = <<-EOF
               #!/bin/bash
-              # 1. スワップ領域の確保
+              # 起動時にスワップを作成し、小さなインスタンスでもメモリ不足を補います。
               fallocate -l 2G /swapfile
               chmod 600 /swapfile
               mkswap /swapfile
               swapon /swapfile
               echo '/swapfile swap swap defaults 0 0' >> /etc/fstab
 
-              # 2. 基本ソフトのインストール
+              # Docker と Git など、アプリ起動に必要な基本ソフトをインストールします。
               dnf update -y
               dnf install -y docker git
               
@@ -45,17 +47,17 @@ resource "aws_instance" "app" {
               curl -SL https://github.com/docker/compose/releases/download/v2.24.1/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
               
-              # 3. Docker の有効化
+              # Docker を起動し、再起動後も自動起動するようにします。
               systemctl start docker
               systemctl enable docker
               usermod -a -G docker ec2-user
 
-              # 4. ソースコードのチェックアウト
+              # アプリケーションのソースコードを取得します。
               mkdir -p /home/ec2-user/learning-app
               chown ec2-user:ec2-user /home/ec2-user/learning-app
               sudo -u ec2-user git clone https://github.com/rtiak-ops/learning-app.git /home/ec2-user/learning-app || (cd /home/ec2-user/learning-app && sudo -u ec2-user git pull)
 
-              # 5. アプリ用環境変数の設定 (.env 生成)
+              # DB 接続情報などを .env に書き出し、コンテナから読み込めるようにします。
               cat <<EOT > /home/ec2-user/learning-app/.env
               DATABASE_URL=postgresql+asyncpg://postgresMaster:${var.db_password}@${var.rds_endpoint}/todo_db
               POSTGRES_USER=postgresMaster
@@ -71,11 +73,11 @@ resource "aws_instance" "app" {
               EOT
               chown ec2-user:ec2-user /home/ec2-user/learning-app/.env
 
-              # 6. コンテナのビルド・起動
+              # Docker イメージをビルドしてアプリケーションを起動します。
               cd /home/ec2-user/learning-app
               docker compose up -d --build
               
-              # 7. DB マイグレーション
+              # DB の準備が整うまで再試行し、スキーマを最新状態に更新します。
               for i in {1..12}; do
                 docker compose exec -T backend alembic upgrade head && break
                 sleep 5

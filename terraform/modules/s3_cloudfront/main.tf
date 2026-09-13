@@ -1,6 +1,7 @@
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "frontend" {
+  # フロントエンドの静的ファイルを保存する非公開バケットです。
   bucket        = "${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}"
   force_destroy = true
 
@@ -10,6 +11,7 @@ resource "aws_s3_bucket" "frontend" {
 }
 
 resource "aws_s3_bucket_public_access_block" "frontend" {
+  # S3 への直接公開を禁止し、配信経路を CloudFront に限定します。
   bucket = aws_s3_bucket.frontend.id
 
   block_public_acls       = true
@@ -19,6 +21,7 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
 }
 
 resource "aws_s3_bucket_policy" "frontend" {
+  # CloudFront のみが S3 オブジェクトを読み取れるようにします。
   bucket = aws_s3_bucket.frontend.id
   policy = data.aws_iam_policy_document.s3_policy.json
 }
@@ -42,6 +45,7 @@ data "aws_iam_policy_document" "s3_policy" {
 }
 
 resource "aws_cloudfront_origin_access_control" "main" {
+  # CloudFront から S3 へ SigV4 署名付きでアクセスするための設定です。
   name                              = "${var.project_name}-oac"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
@@ -49,6 +53,7 @@ resource "aws_cloudfront_origin_access_control" "main" {
 }
 
 resource "aws_cloudfront_distribution" "main" {
+  # 静的ファイルは S3、API リクエストは EC2 へ振り分ける CDN です。
   origin {
     domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
     origin_id                = "S3-${aws_s3_bucket.frontend.bucket}"
@@ -87,7 +92,7 @@ resource "aws_cloudfront_distribution" "main" {
     default_ttl            = 3600
   }
 
-  # Simplified API patterns for brevity but keeping essential ones
+  # API パスはキャッシュせず、認証情報やリクエスト内容を EC2 に転送します。
   dynamic "ordered_cache_behavior" {
     for_each = ["/auth/*", "/todos/*", "/projects/*", "/organizations/*", "/admin/*", "/monitor/*", "/ai/*", "/health"]
     content {

@@ -3,6 +3,7 @@ data "aws_ec2_managed_prefix_list" "cloudfront" {
 }
 
 resource "aws_security_group" "ec2" {
+  # EC2 の通信を制御します。API の 8000 番ポートは CloudFront 経由だけ許可します。
   name        = "${var.project_name}-ec2-sg"
   description = "Security group for EC2 instance"
   vpc_id      = var.vpc_id
@@ -42,6 +43,7 @@ resource "aws_security_group" "ec2" {
 }
 
 resource "aws_security_group" "rds" {
+  # RDS は EC2 のセキュリティグループからの PostgreSQL 接続だけを許可します。
   name        = "${var.project_name}-rds-sg"
   description = "Security group for RDS instance"
   vpc_id      = var.vpc_id

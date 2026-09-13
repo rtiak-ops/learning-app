@@ -1,4 +1,5 @@
 resource "aws_vpc" "main" {
+  # アプリケーション全体を収容する VPC。DNS を有効にして AWS リソース間の名前解決を使います。
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -13,6 +14,7 @@ data "aws_availability_zones" "available" {
 }
 
 resource "aws_subnet" "public" {
+  # インターネットゲートウェイ経由で外部通信できるサブネット。EC2 など公開が必要なリソースに使用します。
   count                   = 2
   vpc_id                  = aws_vpc.main.id
   cidr_block              = cidrsubnet(var.vpc_cidr, 8, count.index)
@@ -25,6 +27,7 @@ resource "aws_subnet" "public" {
 }
 
 resource "aws_subnet" "private" {
+  # 直接インターネットへ公開しないサブネット。RDS などの内部リソースを配置します。
   count             = 2
   vpc_id            = aws_vpc.main.id
   cidr_block        = cidrsubnet(var.vpc_cidr, 8, 10 + count.index)
@@ -36,6 +39,7 @@ resource "aws_subnet" "private" {
 }
 
 resource "aws_internet_gateway" "main" {
+  # VPC とインターネットの通信経路を提供します。
   vpc_id = aws_vpc.main.id
 
   tags = {
@@ -44,6 +48,7 @@ resource "aws_internet_gateway" "main" {
 }
 
 resource "aws_route_table" "public" {
+  # パブリックサブネットから外部へ出るためのデフォルトルートを定義します。
   vpc_id = aws_vpc.main.id
 
   route {
