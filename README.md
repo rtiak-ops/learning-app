@@ -42,14 +42,40 @@ React / FastAPI / PostgreSQL で構成された、チーム向けのAIタスク�
 
 ```mermaid
 flowchart LR
-    Browser[Browser] --> Frontend[React / Vite]
-    Frontend -->|REST API| Backend[FastAPI]
+    User[利用者] --> Browser[ブラウザ]
+    Browser --> Frontend[React / Vite\nNginx]
+    Frontend -->|REST API / JWT| Backend[FastAPI]
     Backend --> DB[(PostgreSQL)]
-    Backend -.-> Gemini[Gemini API]
-    Backend -.-> OpenAI[OpenAI API]
+    Backend -.->|優先| Gemini[Google Gemini API]
+    Backend -.->|フォールバック| OpenAI[OpenAI API]
 ```
 
 本番構成では、フロントエンドを S3 / CloudFront、バックエンドを EC2 上のDocker、データベースを RDS PostgreSQL に配置する想定です。Terraformの詳細は [`terraform/`](terraform/) を参照してください。
+
+### 利用フロー
+
+```mermaid
+sequenceDiagram
+    actor User as 利用者
+    participant Web as Webアプリ
+    participant API as FastAPI
+    participant DB as PostgreSQL
+    participant AI as Gemini / OpenAI
+
+    User->>Web: 新規登録・ログイン
+    Web->>API: 認証情報を送信
+    API->>DB: ユーザーを照合
+    DB-->>API: ユーザー情報
+    API-->>Web: JWTを返却
+    User->>Web: プロジェクト・タスクを操作
+    Web->>API: JWT付きAPIリクエスト
+    API->>DB: 権限を確認して保存・取得
+    opt AIタスク分解
+        API->>AI: タスクをサブタスクへ分解
+        AI-->>API: サブタスク候補
+        API-->>Web: 結果を返却
+    end
+```
 
 ## 必要条件
 
@@ -176,7 +202,66 @@ npm run test:coverage
 
 ## データと権限
 
-主要なデータは `organizations`、`users`、`projects`、`todos`、`project_collaborators`、`audit_logs` で構成されます。主要テーブルには `organization_id` を持たせ、APIでは認証ユーザーの組織を基準にデータを分離します。
+主要なデータは `organizations`、`users`、`projects`、`todos`、`project_collaborators`、`audit_logs` で構成されます。組織で利用者を分離し、プロジェクトはオーナーまたは明示的に追加された共同編集者のみが利用できます。
+
+```mermaid
+erDiagram
+    ORGANIZATION ||--o{ USER : "has members"
+    ORGANIZATION ||--o{ PROJECT : "owns"
+    USER ||--o{ PROJECT : "owns"
+    PROJECT ||--o{ TODO : "contains"
+    USER ||--o{ TODO : "creates"
+    USER ||--o{ PROJECT_COLLABORATOR : "is assigned"
+    PROJECT ||--o{ PROJECT_COLLABORATOR : "grants access"
+    USER ||--o{ AUDIT_LOG : "performs"
+    ORGANIZATION ||--o{ AUDIT_LOG : "scopes"
+
+    ORGANIZATION {
+        int id PK
+        string name
+    }
+    USER {
+        int id PK
+        string email
+        string role
+    }
+    PROJECT {
+        int id PK
+        string name
+        int owner_id FK
+    }
+    TODO {
+        int id PK
+        string title
+        string status
+        string priority
+    }
+    PROJECT_COLLABORATOR {
+        int project_id FK
+        int user_id FK
+        string permission
+    }
+    AUDIT_LOG {
+        int id PK
+        string action
+    }
+```
+
+### 権限の考え方
+
+```mermaid
+flowchart TD
+    Request[APIリクエスト] --> Auth{JWTは有効か?}
+    Auth -->|いいえ| Unauthorized[401 Unauthorized]
+    Auth -->|はい| Scope{対象は?}
+    Scope -->|個人タスク| Owner{作成者本人か?}
+    Scope -->|プロジェクト| Access{オーナーまたは共同編集者か?}
+    Owner -->|はい| Allow[操作を許可]
+    Owner -->|いいえ| Forbidden[403 Forbidden]
+    Access -->|いいえ| Forbidden
+    Access -->|Viewer| Read[閲覧のみ許可]
+    Access -->|Editor / Owner| Allow
+```
 
 - **Admin / User**: 組織レベルのロール
 - **Viewer / Editor**: プロジェクト単位の操作権限
