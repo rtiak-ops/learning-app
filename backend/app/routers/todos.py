@@ -28,6 +28,18 @@ from ..database import get_db
 router = APIRouter(prefix="/todos", tags=["Todos"])
 
 
+async def require_todo_editor(
+    db: AsyncSession, todo: models.Todo, current_user: models.User
+) -> None:
+    """個人タスクは所有者のみ、プロジェクトタスクは Editor のみ変更できる。"""
+    if todo.project_id is None:
+        if todo.owner_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+        return
+    if not await crud.is_project_editor(db, todo.project_id, current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Editor permission is required")
+
+
 # ===========================
 # ToDoアイテムの読み取り（全件取得）
 # ===========================
@@ -84,6 +96,9 @@ async def create_todo(
     - 401 Unauthorized: 認証トークンが無効または期限切れの場合
     - 422 Unprocessable Entity: リクエストボディのバリデーションエラー
     """
+    if todo.project_id is not None and not await crud.is_project_editor(db, todo.project_id, current_user.id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Editor permission is required")
+
     # crudモジュールの非同期関数を呼び出し、ToDoアイテムを作成
     # owner_idを指定することで、ログインユーザーのToDoとして作成
     new_todo = await crud.create_todo(db, todo=todo, owner_id=current_user.id)
@@ -142,7 +157,17 @@ async def update_todo(
     """
     # crudモジュールの非同期関数を呼び出し、ToDoアイテムを更新
     # owner_idを指定することで、ログインユーザーのToDoのみを更新可能にする
-    updated = await crud.update_todo(db, todo_id=todo_id, todo=todo, owner_id=current_user.id)
+    existing = await crud.get_todo_by_id(db, todo_id=todo_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Todo with id {todo_id} not found")
+    await require_todo_editor(db, existing, current_user)
+
+    # 移動先プロジェクトにも編集権限が必要。
+    if todo.project_id is not None and todo.project_id != existing.project_id:
+        if not await crud.is_project_editor(db, todo.project_id, current_user.id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Editor permission is required for destination project")
+
+    updated = await crud.update_todo(db, todo_id=todo_id, todo=todo)
     
     # 更新対象が見つからなかった場合（存在しないIDまたは他のユーザーの所有）
     if updated is None:  # Noneチェックのほうがより明示的で安全
@@ -202,7 +227,14 @@ async def delete_todo(
     """
     # crudモジュールの非同期関数を呼び出し、ToDoアイテムを削除
     # owner_idを指定することで、ログインユーザーのToDoのみを削除可能にする
-    deleted = await crud.delete_todo(db, todo_id=todo_id, owner_id=current_user.id)
+    existing = await crud.get_todo_by_id(db, todo_id=todo_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Todo with id {todo_id} not found",
+        )
+    await require_todo_editor(db, existing, current_user)
+    deleted = await crud.delete_todo(db, todo_id=todo_id)
     
     # 削除対象が見つからなかった場合（存在しないIDまたは他のユーザーの所有）
     if not deleted:  # bool値のFalseが返された場合（削除対象が見つからない/削除に失敗）
@@ -262,5 +294,6 @@ async def reorder_todos(
     """
     # crudモジュールの非同期関数を呼び出し、ToDoの並び順を更新
     # owner_idを指定することで、ログインユーザーのToDoのみを並び替え可能にする
+    # 並び替えは所有タスクだけを対象にし、他ユーザーのタスクを変更させない。
     await crud.reorder_todos(db, todo_ids=payload.todo_ids, owner_id=current_user.id)
     return {"message": "Order updated"}

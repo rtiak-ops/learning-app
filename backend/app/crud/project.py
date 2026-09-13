@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,22 +19,17 @@ async def get_projects(db: AsyncSession, user_id: int) -> list[models.Project]:
     Returns:
         list[models.Project]: プロジェクトモデルのリスト
     """
-    # ユーザー情報を取得して組織を確認
-    user_result = await db.execute(select(models.User).where(models.User.id == user_id))
-    user = user_result.scalar_one_or_none()
-    
-    # 組織に属していない場合、オーナーであるか共同編集者として登録されているものを抽出
-    if not user or not user.organization_id:
-        collab_stmt = select(models.ProjectCollaborator.project_id).where(models.ProjectCollaborator.user_id == user_id)
-        stmt = select(models.Project).where(
-            (models.Project.owner_id == user_id) | 
-            (models.Project.id.in_(collab_stmt))
+    # プロジェクトは、オーナーまたは明示的に追加された共同編集者だけが閲覧できる。
+    # 組織所属だけで全プロジェクトを公開しないことで、Viewer / Editor 権限を実効化する。
+    collab_stmt = select(models.ProjectCollaborator.project_id).where(
+        models.ProjectCollaborator.user_id == user_id
+    )
+    stmt = select(models.Project).where(
+        or_(
+            models.Project.owner_id == user_id,
+            models.Project.id.in_(collab_stmt),
         )
-    else:
-        # 組織に属している場合、その組織の全プロジェクトを取得
-        stmt = select(models.Project).where(
-            models.Project.organization_id == user.organization_id
-        )
+    )
 
     # 共同編集者情報も含めて読み込み、作成日時の降順でソート
     stmt = stmt.options(
@@ -79,6 +74,19 @@ async def get_project_by_id(db: AsyncSession, project_id: int, user_id: int) -> 
         
     return None
 
+
+async def get_project_collaboration(
+    db: AsyncSession, project_id: int, user_id: int
+) -> models.ProjectCollaborator | None:
+    """指定ユーザーのプロジェクト共同編集者レコードを取得する。"""
+    result = await db.execute(
+        select(models.ProjectCollaborator).where(
+            models.ProjectCollaborator.project_id == project_id,
+            models.ProjectCollaborator.user_id == user_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
 async def is_project_editor(db: AsyncSession, project_id: int, user_id: int) -> bool:
     """
     ユーザーがプロジェクトに対して編集権限（owner または permission='editor'）を持っているか判定します。
@@ -102,14 +110,8 @@ async def is_project_editor(db: AsyncSession, project_id: int, user_id: int) -> 
     if project.owner_id == user_id:
         return True
         
-    # 共同編集者として 'editor' 権限を持っているかチェック
-    collab_stmt = select(models.ProjectCollaborator).where(
-        models.ProjectCollaborator.project_id == project_id,
-        models.ProjectCollaborator.user_id == user_id,
-        models.ProjectCollaborator.permission == "editor"
-    )
-    collab_result = await db.execute(collab_stmt)
-    return collab_result.scalar_one_or_none() is not None
+    collaboration = await get_project_collaboration(db, project_id, user_id)
+    return collaboration is not None and collaboration.permission == "editor"
 
 async def create_project(db: AsyncSession, project: schemas.ProjectCreate, owner_id: int) -> models.Project:
     """
@@ -259,6 +261,17 @@ async def add_collaborator(db: AsyncSession, project_id: int, collaborator: sche
     Returns:
         models.ProjectCollaborator: 作成された共同編集者レコード
     """
+    project_result = await db.execute(select(models.Project).where(models.Project.id == project_id))
+    project = project_result.scalar_one_or_none()
+    user_result = await db.execute(select(models.User).where(models.User.id == collaborator.user_id))
+    user = user_result.scalar_one_or_none()
+    if project is None or user is None:
+        raise ValueError("Project or user not found")
+    if project.organization_id != user.organization_id:
+        raise ValueError("Users must belong to the same organization")
+    if await get_project_collaboration(db, project_id, collaborator.user_id):
+        raise ValueError("User is already a collaborator")
+
     db_collab = models.ProjectCollaborator(
         project_id=project_id,
         user_id=collaborator.user_id,

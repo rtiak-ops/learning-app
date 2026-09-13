@@ -2,7 +2,23 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class TodoStatus(StrEnum):
+    TODO = "TODO"
+    IN_PROGRESS = "IN_PROGRESS"
+    REVIEW = "REVIEW"
+    DONE = "DONE"
+
+
+class TodoPriority(StrEnum):
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+    URGENT = "URGENT"
 
 
 class TodoBase(BaseModel):
@@ -13,8 +29,8 @@ class TodoBase(BaseModel):
     description: str | None = None
     completed: bool = False
     project_id: int | None = None
-    status: str = "TODO"
-    priority: str = "MEDIUM"
+    status: TodoStatus = TodoStatus.TODO
+    priority: TodoPriority = TodoPriority.MEDIUM
     due_date: datetime | None = None
 
     @field_validator("title")
@@ -45,9 +61,16 @@ class TodoUpdate(BaseModel):
     description: str | None = None
     completed: bool | None = None
     project_id: int | None = None
-    status: str | None = None
-    priority: str | None = None
+    status: TodoStatus | None = None
+    priority: TodoPriority | None = None
     due_date: datetime | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_optional_title(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return TodoBase.validate_title(v)
 
 class TodoOut(TodoBase):
     """
@@ -66,3 +89,10 @@ class TodoReorder(BaseModel):
     To Doアイテムの表示順序を変更するためのスキーマ。
     """
     todo_ids: list[int]
+
+    @field_validator("todo_ids")
+    @classmethod
+    def validate_unique_ids(cls, v: list[int]) -> list[int]:
+        if len(v) != len(set(v)):
+            raise ValueError("todo_ids must not contain duplicates")
+        return v

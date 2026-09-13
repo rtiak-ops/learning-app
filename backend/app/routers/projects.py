@@ -142,7 +142,10 @@ async def add_collaborator(
     if not project or project.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only owners can add collaborators")
     
-    return await crud.add_collaborator(db, project_id=project_id, collaborator=collaborator)
+    try:
+        return await crud.add_collaborator(db, project_id=project_id, collaborator=collaborator)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 @router.delete("/{project_id}/collaborators/{user_id}")
 async def remove_collaborator(

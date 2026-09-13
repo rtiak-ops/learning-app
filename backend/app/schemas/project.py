@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class CollaboratorPermission(StrEnum):
+    VIEWER = "viewer"
+    EDITOR = "editor"
 
 
 class ProjectBase(BaseModel):
@@ -18,6 +25,14 @@ class ProjectCreate(ProjectBase):
     """
     pass
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        v = v.strip()
+        if not v or len(v) > 100:
+            raise ValueError("Project name must be 1 to 100 characters")
+        return v
+
 class ProjectUpdate(BaseModel):
     """
     プロジェクト情報更新用のスキーマ。全項目が任意。
@@ -25,12 +40,19 @@ class ProjectUpdate(BaseModel):
     name: str | None = None         # プロジェクト名
     description: str | None = None  # 説明
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return ProjectCreate.validate_name(v)
+
 class CollaboratorBase(BaseModel):
     """
     共同作業者の基本情報を定義するスキーマ。
     """
     user_id: int                    # ユーザーID
-    permission: str = "editor"      # 権限 (デフォルト: "editor")
+    permission: CollaboratorPermission = CollaboratorPermission.EDITOR
 
 class CollaboratorCreate(CollaboratorBase):
     """

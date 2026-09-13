@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +12,10 @@ from ..database import get_db
 router = APIRouter(prefix="/monitor", tags=["Monitoring"])
 
 @router.get("/health")
-async def health_check(db: AsyncSession = Depends(get_db)):
+async def health_check(
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(dependencies.admin_required),
+):
     """
     システムの稼働状況（ヘルスチェック）を確認します。
     データベースへの接続テストと基本情報の取得を行います。
@@ -22,9 +25,9 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         # データベースに対してシンプルなクエリを実行し、接続を確認
         await db.execute(text("SELECT 1"))
         db_status = "operational"
-    except Exception as e:
-        # 接続エラーが発生した場合はエラーメッセージを記録
-        db_status = f"error: {str(e)}"
+    except Exception as exc:
+        # 接続エラーの詳細は外部レスポンスに含めない。
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database unavailable") from exc
     
     # データベースの応答時間を計測
     db_latency = time.time() - start_time
@@ -36,7 +39,6 @@ async def health_check(db: AsyncSession = Depends(get_db)):
             "status": db_status,
             "latency_sec": round(db_latency, 4)
         },
-        "environment": dependencies.config.ENV,
         "version": "1.1.0"
     }
 

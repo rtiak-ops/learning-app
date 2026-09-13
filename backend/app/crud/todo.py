@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import models, schemas
@@ -21,8 +21,22 @@ async def get_todos(db: AsyncSession, owner_id: int, project_id: int | None = No
     """
     # 基本のクエリ（表示順でソート）
     stmt = select(models.Todo).order_by(models.Todo.order)
-    # ユーザー自身のタスクのみ対象
-    stmt = stmt.where(models.Todo.owner_id == owner_id)
+    # 個人タスク、所有プロジェクトのタスク、共同編集プロジェクトのタスクを返す。
+    stmt = (
+        stmt.outerjoin(models.Project, models.Todo.project_id == models.Project.id)
+        .outerjoin(
+            models.ProjectCollaborator,
+            models.ProjectCollaborator.project_id == models.Project.id,
+        )
+        .where(
+            or_(
+                models.Todo.owner_id == owner_id,
+                models.Project.owner_id == owner_id,
+                models.ProjectCollaborator.user_id == owner_id,
+            )
+        )
+        .distinct()
+    )
 
     # プロジェクト指定がある場合
     if project_id:
@@ -55,7 +69,7 @@ async def create_todo(db: AsyncSession, todo: schemas.TodoCreate, owner_id: int)
     await db.refresh(new_todo)
     return new_todo
 
-async def update_todo(db: AsyncSession, todo_id: int, todo: schemas.TodoUpdate, owner_id: int) -> models.Todo | None:
+async def update_todo(db: AsyncSession, todo_id: int, todo: schemas.TodoUpdate) -> models.Todo | None:
     """
     指定されたIDのTodoアイテムを更新します。
 
@@ -68,10 +82,7 @@ async def update_todo(db: AsyncSession, todo_id: int, todo: schemas.TodoUpdate, 
     Returns:
         models.Todo | None: 更新後のTodoモデル、存在しない場合は None
     """
-    # 自身の所有するタスクであることを確認
-    result = await db.execute(
-        select(models.Todo).where(models.Todo.id == todo_id, models.Todo.owner_id == owner_id)
-    )
+    result = await db.execute(select(models.Todo).where(models.Todo.id == todo_id))
     db_todo = result.scalar_one_or_none()
     
     if db_todo:
@@ -85,7 +96,7 @@ async def update_todo(db: AsyncSession, todo_id: int, todo: schemas.TodoUpdate, 
         
     return db_todo
 
-async def delete_todo(db: AsyncSession, todo_id: int, owner_id: int) -> models.Todo | None:
+async def delete_todo(db: AsyncSession, todo_id: int) -> models.Todo | None:
     """
     指定されたIDのTodoアイテムを削除します。
 
@@ -97,9 +108,7 @@ async def delete_todo(db: AsyncSession, todo_id: int, owner_id: int) -> models.T
     Returns:
         models.Todo | None: 削除されたTodoモデル、存在しない場合は None
     """
-    result = await db.execute(
-        select(models.Todo).where(models.Todo.id == todo_id, models.Todo.owner_id == owner_id)
-    )
+    result = await db.execute(select(models.Todo).where(models.Todo.id == todo_id))
     db_todo = result.scalar_one_or_none()
     
     if db_todo:
@@ -108,7 +117,7 @@ async def delete_todo(db: AsyncSession, todo_id: int, owner_id: int) -> models.T
         
     return db_todo
 
-async def get_todo_by_id(db: AsyncSession, todo_id: int, owner_id: int) -> models.Todo | None:
+async def get_todo_by_id(db: AsyncSession, todo_id: int) -> models.Todo | None:
     """
     指定されたIDのTodoアイテムを1件取得します。
 
@@ -121,10 +130,7 @@ async def get_todo_by_id(db: AsyncSession, todo_id: int, owner_id: int) -> model
         models.Todo | None: 見つかったTodoモデル、存在しない場合は None
     """
     result = await db.execute(
-        select(models.Todo).where(
-            models.Todo.id == todo_id,
-            models.Todo.owner_id == owner_id
-        )
+        select(models.Todo).where(models.Todo.id == todo_id)
     )
     return result.scalar_one_or_none()
 

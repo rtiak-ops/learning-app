@@ -58,7 +58,7 @@ services:
       - .env
     # --proxy-headers を追加して、NginxからのX-Forwarded-Protoヘッダーを解釈できるようにします
     # サーバーを起動するコマンド。
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips "*" --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips "*"
     # 常に再起動を試みる。
     restart: always
     # 環境変数の追加設定。

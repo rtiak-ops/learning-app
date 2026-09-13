@@ -76,3 +76,62 @@ async def test_duplicate_organization_prevention(client: AsyncClient):
     # すでに登録済みの名称で作成を試みる
     response = await client.post("/organizations/", json={"name": "Duplicate Target Org"}, headers=h2)
     assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_project_editor_can_manage_shared_tasks_but_viewer_cannot(client: AsyncClient):
+    """共同編集者の権限がプロジェクト内のタスク操作へ一貫して適用されること。"""
+    async def register_and_login(email: str):
+        await client.post("/auth/register", json={"email": email, "password": "password123"})
+        response = await client.post("/auth/login", json={"email": email, "password": "password123"})
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    owner_headers = await register_and_login("owner_permissions@test.com")
+    editor_headers = await register_and_login("editor_permissions@test.com")
+    viewer_headers = await register_and_login("viewer_permissions@test.com")
+
+    await client.post("/organizations/", json={"name": "Permissions Org"}, headers=owner_headers)
+    for email in ("editor_permissions@test.com", "viewer_permissions@test.com"):
+        response = await client.post("/admin/users/assign", json={"email": email}, headers=owner_headers)
+        assert response.status_code == 200
+
+    project_response = await client.post("/projects/", json={"name": "Shared project"}, headers=owner_headers)
+    project_id = project_response.json()["id"]
+    users = await client.get("/admin/users", headers=owner_headers)
+    ids = {user["email"]: user["id"] for user in users.json()}
+    for email, permission in (("editor_permissions@test.com", "editor"), ("viewer_permissions@test.com", "viewer")):
+        response = await client.post(
+            f"/projects/{project_id}/collaborators",
+            json={"user_id": ids[email], "permission": permission},
+            headers=owner_headers,
+        )
+        assert response.status_code == 200
+
+    create_response = await client.post(
+        "/todos/", json={"title": "Editor task", "project_id": project_id}, headers=editor_headers
+    )
+    assert create_response.status_code == 201
+    todo_id = create_response.json()["id"]
+
+    owner_todos = await client.get("/todos/", headers=owner_headers)
+    assert any(todo["id"] == todo_id for todo in owner_todos.json())
+
+    viewer_create = await client.post(
+        "/todos/", json={"title": "Blocked task", "project_id": project_id}, headers=viewer_headers
+    )
+    assert viewer_create.status_code == 403
+    viewer_update = await client.patch(f"/todos/{todo_id}", json={"title": "Blocked update"}, headers=viewer_headers)
+    assert viewer_update.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_todo_and_collaborator_inputs_are_validated(client: AsyncClient):
+    headers = await client.post("/auth/register", json={"email": "validation@test.com", "password": "password123"})
+    assert headers.status_code == 201
+    login = await client.post("/auth/login", json={"email": "validation@test.com", "password": "password123"})
+    auth_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    invalid_todo = await client.post("/todos/", json={"title": "x", "priority": "NOW"}, headers=auth_headers)
+    assert invalid_todo.status_code == 422
+    invalid_project = await client.post("/projects/", json={"name": "   "}, headers=auth_headers)
+    assert invalid_project.status_code == 422

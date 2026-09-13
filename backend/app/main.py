@@ -15,7 +15,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from .core.config import CORS_ORIGINS, DEBUG, PROJECT_NAME
+from .core.config import CORS_ORIGINS, DEBUG, ENV, PROJECT_NAME
 from .database import AsyncSessionLocal, Base, engine
 from .limiter import limiter
 from .middleware import RequestLoggingMiddleware, SecurityHeadersMiddleware
@@ -42,11 +42,14 @@ async def lifespan(app: FastAPI):
     logger.info("アプリケーション起動: データベース初期化を開始します。")
     try:
         # DB接続に時間がかかりすぎて504になるのを防ぐため、5秒でタイムアウトさせる
-        async with engine.begin() as conn:
-            await asyncio.wait_for(
-                conn.run_sync(Base.metadata.create_all), 
-                timeout=10.0
-            )
+        if ENV != "production":
+            async with engine.begin() as conn:
+                await asyncio.wait_for(
+                    conn.run_sync(Base.metadata.create_all),
+                    timeout=10.0,
+                )
+        else:
+            logger.info("本番環境ではAlembic migrationによるスキーマ管理を使用します。")
         logger.info("データベースの初期化が完了しました。")
     except TimeoutError:
         logger.error("データベース接続がタイムアウトしました。DATABASE_URLまたはネットワーク設定を確認してください。")
@@ -75,11 +78,16 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={
-            "detail": "Internal Server Error (Detailed)",
-            "error_type": type(exc).__name__,
-            "error_msg": str(exc),
-            # DEBUG=True の場合のみトレースバックを返す
-            "traceback": error_msg if DEBUG else "Contact administrator"
+            "detail": "Internal Server Error",
+            **(
+                {
+                    "error_type": type(exc).__name__,
+                    "error_msg": str(exc),
+                    "traceback": error_msg,
+                }
+                if DEBUG
+                else {}
+            ),
         },
     )
 

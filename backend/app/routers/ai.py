@@ -8,10 +8,11 @@ import logging
 
 import google.generativeai as genai
 import openai
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from .. import dependencies, models
+from ..limiter import limiter
 
 # ----------------------------------------------------------------------
 # AI (LLM) 連携用のルーター
@@ -27,8 +28,10 @@ class AIResponse(BaseModel):
     subtasks: list[str]
 
 @router.post("/breakdown", response_model=AIResponse)
+@limiter.limit("10/minute")
 async def breakdown_task(
     req: AIRequest,
+    request: Request,
     current_user: models.User = Depends(dependencies.get_current_user)
 ):
     """
@@ -98,11 +101,10 @@ async def breakdown_task(
             logger.error(f"OpenAI API Error: {e}")
 
     if not success:
-        return AIResponse(subtasks=[
-            f"【AI提案】{req.title} の重要ポイントを書き出す",
-            f"【AI提案】{req.title} を進めるための時間を作る",
-            f"【AI提案】{req.title} の完了を確認する",
-        ])
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI task breakdown is currently unavailable. Configure an AI provider and try again.",
+        )
 
     try:
         if "```json" in content:
