@@ -8,7 +8,7 @@ React と TypeScript をベースに、高速で直感的な操作感を実現�
 ## ✨ 主な特徴
 
 - **AI連携 UI**: ボタン一つでタスクをAIが分解。結果をリアルタイムでリストに反映。
-- **ドラッグ＆ドロップ**: `React Beautiful DnD` によるシームレスなタスク並び替え。
+- **ドラッグ＆ドロップ**: `@hello-pangea/dnd` によるシームレスなタスク並び替え。
 - **楽観的更新 (Optimistic Updates)**: `TanStack Query` により、API通信の完了を待たずにUIが即座に反応し、オフラインに近い軽快な操作感を提供。
 - **完全レスポンシブ**: `Tailwind CSS` による、モバイル・デスクトップ両対応のデザイン。
 - **リッチなフィードバック**: `react-hot-toast` による通知と、スケルトンローディングによるスムーズな画面遷移。
@@ -17,7 +17,7 @@ React と TypeScript をベースに、高速で直感的な操作感を実現�
 
 ## 🛠️ 技術スタック
 
-- **Core**: `React 18`, `TypeScript`
+- **Core**: `React 19`, `TypeScript`
 - **Build Tool**: `Vite`
 - **State Management**: `TanStack Query (React Query) v5`
 - **Styling**: `Tailwind CSS`, `Lucide React` (Icons)
