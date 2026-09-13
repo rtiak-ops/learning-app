@@ -43,7 +43,7 @@ React / FastAPI / PostgreSQL で構成された、チーム向けのAIタスク�
 ```mermaid
 flowchart LR
     User[利用者] --> Browser[ブラウザ]
-    Browser --> Frontend[React / Vite\nNginx]
+    Browser --> Frontend[React Vite and Nginx]
     Frontend -->|REST API / JWT| Backend[FastAPI]
     Backend --> DB[(PostgreSQL)]
     Backend -.->|優先| Gemini[Google Gemini API]
