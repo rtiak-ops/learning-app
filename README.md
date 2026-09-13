@@ -20,9 +20,12 @@ React / FastAPI / PostgreSQL で構成された、チーム向けのAIタスク�
 ## 画面
 
 <p align="center">
-  <img src="docs/images/dashBoard.png" alt="ダッシュボード" width="49%">
-  <img src="docs/images/project.png" alt="プロジェクト管理" width="49%">
+  <img src="docs/images/dashBoard.png" alt="期限・優先度を横断して確認できるダッシュボード" width="49%">
+  <img src="docs/images/project.png" alt="権限付きでタスクを管理するプロジェクト画面" width="49%">
 </p>
+
+- **ダッシュボード**: プロジェクトをまたいでタスクの状況、期限、優先度を確認
+- **プロジェクト**: タスクと共同編集者をプロジェクト単位で管理
 
 ## 技術スタック
 
@@ -65,6 +68,16 @@ cp .env.example .env
 
 `.env` を環境に合わせて編集します。最低限、データベースの3項目と `SECRET_KEY` を設定してください。AI機能を使わない場合、AI APIキーは空でも起動できます。
 
+ローカルで起動する場合は、`.env.example` 内の外部IPをローカル向けの値に置き換えてください。
+
+```dotenv
+CORS_ORIGINS=http://localhost,http://localhost:5173
+VITE_API_BASE_URL=http://localhost:8000
+DOMAIN_NAME=localhost
+```
+
+`docker-compose.yml` はホストの `80`、`443`、`8000` ポートを使用します。起動前に、これらを使用するWebサーバーやコンテナが停止していることを確認してください。Compose構成はHTTPで動作し、HTTPS化にはドメインと証明書を用意したうえでNginx設定を変更します。
+
 ```bash
 docker compose up --build
 ```
@@ -84,6 +97,12 @@ docker compose down
 ```
 
 データベースのボリュームも削除する場合は、対象を確認したうえで `docker compose down -v` を実行してください。
+
+### 初回利用
+
+1. [http://localhost](http://localhost) を開き、**新規登録**から名前・メールアドレス・パスワードを登録します。
+2. 登録したアカウントでログインします。最初に登録したユーザーには Admin ロールが自動的に付与されます。
+3. 必要に応じてサイドバーから組織を作成し、プロジェクトとタスクを追加します。
 
 ## 個別起動（開発用）
 
@@ -140,6 +159,8 @@ npm run test:coverage
 
 本番環境では、強度の高い秘密鍵・パスワードを使い、`DEBUG=false` としてください。
 
+> `.env.example` に含まれるIPアドレスは設定例です。公開環境では実際のドメインへ、ローカル環境では `localhost` へ必ず置き換えてください。
+
 ## ディレクトリ構成
 
 ```text
@@ -164,7 +185,7 @@ npm run test:coverage
 
 ## AWSへのデプロイ
 
-本番デプロイはTerraformとGitHub Actionsを利用します。AWSアカウント、認証情報、DNS・証明書などの環境依存設定が必要です。
+本番デプロイはTerraformとGitHub Actionsを利用します。AWSアカウント、認証情報、DNS・証明書などの環境依存設定が必要です。`apply` はAWSリソースを作成・変更するため、必ず `plan` の内容を確認してから実行してください。
 
 ```bash
 cd terraform
@@ -173,7 +194,7 @@ terraform plan
 terraform apply
 ```
 
-デプロイ前に、ワークフロー（[`.github/workflows/`](.github/workflows/)）が要求するGitHub Secretsを確認してください。特に `SECRET_KEY`、DBパスワード、AWS認証情報、AI APIキーはリポジトリへ直接記載しないでください。
+デプロイ前に、ワークフロー（[`.github/workflows/`](.github/workflows/)）が要求するGitHub Secretsを確認してください。特に `SECRET_KEY`、DBパスワード、AWS認証情報、AI APIキーはリポジトリへ直接記載しないでください。環境固有のTerraform変数もリポジトリに含めず、安全な方法で管理してください。
 
 ## ドキュメント
 
